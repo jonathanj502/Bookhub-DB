@@ -22,20 +22,17 @@ button {
 
 .results {
   width: min(900px, 95%);
-  margin-top: 8px;
+  margin: 8px;
   display: flex;
   flex-direction: column;
 }
 
 .result-item {
+  display: flex;
   padding: 8px 0;
+  gap: 12px;
   border-bottom: 1px solid #eee;
 }.results {
   width: min(900px, 95%);
   margin-top: 8px;
-}
-
-.result-item {
-  padding: 8px 0;
-  border-bottom: 1px solid #eee;
 }

@@ -19,8 +19,15 @@
   <div class="results" aria-live="polite">
     {% for b in results %}
       <div class="result-item">
-        <strong>{{ b.title }}</strong>
-        <div>{{ b.authors or 'Unknown author' }}</div>
+        {% if b.image_url %}
+          <img class="thumb" src="{{ b.image_url }}" alt="{{ b.title }}" loading="lazy"
+               onerror="this.style.display='none'">
+        {% endif %}
+        <div class="info">
+          <h2>{{ b.title }}</h2>
+          <p>By {{ b.authors }}</p>
+          <p>Published {{ b.published_year }}</p>
+        </div>
       </div>
     {% endfor %}
   </div>
