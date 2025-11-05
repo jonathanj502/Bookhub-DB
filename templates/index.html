@@ -34,7 +34,7 @@
         <legend>Search for:</legend>
         <label>
           <input type="radio" name="mode" value="title"
-                {% if mode == 'title' %}checked{% endif %}>
+                {% if mode == 'title' or not mode %}checked{% endif %}>
           Book Title
         </label>
         <label>
