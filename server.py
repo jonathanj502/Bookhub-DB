@@ -379,10 +379,37 @@ def delete_review(book_id):
 
     return redirect(url_for('book', book_id=book_id))
 
-@app.route('/author/<int:author_id>')
+@app.route('/author/<int:author_id>', methods=['GET', 'POST'])
 def author(author_id):
+    current_user_id = request.cookies.get('profile_id')
+    if current_user_id:
+        current_user_id = int(current_user_id)
+
+    # Handle add/remove favorite
+    if request.method == 'POST' and current_user_id:
+        action = request.form.get('action')
+        with g.conn.begin():
+            if action == 'favorite':
+                g.conn.execute(
+                    text("""
+                        INSERT INTO has_favorite (profile_id, author_id)
+                        VALUES (:pid, :aid)
+                        ON CONFLICT DO NOTHING
+                    """),
+                    {"pid": current_user_id, "aid": author_id}
+                )
+            elif action == 'unfavorite':
+                g.conn.execute(
+                    text("""
+                        DELETE FROM has_favorite
+                        WHERE profile_id = :pid AND author_id = :aid
+                    """),
+                    {"pid": current_user_id, "aid": author_id}
+                )
+        return redirect(url_for('author', author_id=author_id))
+
+    # fetch author row
     try:
-        # fetch author row
         row = g.conn.execute(
             text("SELECT author_id, name, birthday, nationality FROM author WHERE author_id = :aid"),
             {"aid": author_id}
@@ -427,7 +454,21 @@ def author(author_id):
         print("author books db error:", e)
         books = []
 
-    return render_template("author_page.html", author=author, books=books)
+    # check if current user has favorited this author
+    is_favorite = False
+    if current_user_id:
+        is_favorite = g.conn.execute(
+            text("SELECT 1 FROM has_favorite WHERE profile_id=:pid AND author_id=:aid"),
+            {"pid": current_user_id, "aid": author_id}
+        ).fetchone() is not None
+
+    return render_template(
+        "author_page.html",
+        author=author,
+        books=books,
+        current_user_id=current_user_id,
+        is_favorite=is_favorite
+    )
 
 @app.route('/profile/<int:profile_id>', methods=['GET', 'POST'])
 def profile(profile_id):
