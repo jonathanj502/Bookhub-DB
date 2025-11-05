@@ -449,7 +449,53 @@ def profile(profile_id):
         "username": m.get("username") if hasattr(m, "get") else row[1],
         "joined_at": m.get("joined_at") if hasattr(m, "get") else row[2],
     }
-    return render_template('profile.html', profile=profile)
+
+    # show private bookshelves only to the profile owner (based on cookie)
+    viewer = request.cookies.get('profile_id')
+    try:
+        is_owner = (int(viewer) == profile_id)
+    except Exception:
+        is_owner = False
+
+    try:
+        if is_owner:
+            bs_cur = g.conn.execute(
+                text("""
+                    SELECT bookshelf_id, shelf_name, description, is_public, created_at
+                    FROM bookshelf
+                    WHERE profile_id = :pid
+                    ORDER BY created_at DESC
+                """),
+                {"pid": profile_id}
+            )
+        else:
+            bs_cur = g.conn.execute(
+                text("""
+                    SELECT bookshelf_id, shelf_name, description, is_public, created_at
+                    FROM bookshelf
+                    WHERE profile_id = :pid AND is_public = TRUE
+                    ORDER BY created_at DESC
+                """),
+                {"pid": profile_id}
+            )
+
+        bookshelves = []
+        for b in bs_cur:
+            bm = getattr(b, "_mapping", b)
+            bookshelves.append({
+                "id": bm.get("bookshelf_id") if hasattr(bm, "get") else b[0],
+                "name": bm.get("shelf_name") if hasattr(bm, "get") else b[1],
+                "description": bm.get("description") if hasattr(bm, "get") else b[2],
+                "is_public": bm.get("is_public") if hasattr(bm, "get") else b[3],
+                "created_at": bm.get("created_at") if hasattr(bm, "get") else b[4],
+            })
+        bs_cur.close()
+    except Exception as e:
+        print("bookshelves db error:", e)
+        bookshelves = []
+
+    has_view_bookshelf = 'view_bookshelf' in app.view_functions
+    return render_template('profile.html', profile=profile, bookshelves=bookshelves, is_owner=is_owner, has_view_bookshelf=has_view_bookshelf)
 
 # deletes cookies and redirects to home
 @app.route('/logout', methods=['POST'])
