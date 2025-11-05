@@ -567,6 +567,84 @@ def view_bookshelf(bookshelf_id):
 
     return render_template("view_bookshelf.html", shelf=shelf, books=books, is_owner=is_owner)
 
+@app.route('/bookshelf/<int:bookshelf_id>/delete', methods=['POST'])
+def delete_bookshelf(bookshelf_id):
+    # require logged in user
+    pid_cookie = request.cookies.get('profile_id')
+    if not pid_cookie:
+        return redirect(url_for('login'))
+    try:
+        pid = int(pid_cookie)
+    except Exception:
+        return redirect(url_for('login'))
+
+    try:
+        res = g.conn.execute(
+            text("DELETE FROM bookshelf WHERE bookshelf_id = :bsid AND profile_id = :pid"),
+            {"bsid": bookshelf_id, "pid": pid}
+        )
+        try:
+            g.conn.commit()
+        except Exception:
+            pass
+
+        # if no row deleted, either not owner or shelf doesn't exist
+        if getattr(res, "rowcount", None) == 0:
+            abort(403)
+    except Exception as e:
+        print("delete_bookshelf db error:", e)
+        try:
+            g.conn.rollback()
+        except Exception:
+            pass
+        abort(500)
+
+    # redirect back to owner's profile page
+    return redirect(url_for('profile', profile_id=pid))
+
+@app.route('/bookshelf/create', methods=['POST'])
+def create_bookshelf():
+    pid_cookie = request.cookies.get('profile_id')
+    if not pid_cookie:
+        return redirect(url_for('login'))
+    try:
+        pid = int(pid_cookie)
+    except Exception:
+        return redirect(url_for('login'))
+
+    name = request.form.get('shelf_name', '').strip()
+    description = request.form.get('description', '').strip() or None
+    is_public = bool(request.form.get('is_public'))
+
+    if not name:
+        return redirect(url_for('profile', profile_id=pid))
+
+    try:
+        # generate an integer id if the table doesn't auto-increment
+        maxrow = g.conn.execute(text("SELECT COALESCE(MAX(bookshelf_id), 0) AS maxid FROM bookshelf")).fetchone()
+        maxid = (maxrow[0] if maxrow else 0) or 0
+        new_id = maxid + 1
+
+        g.conn.execute(
+            text("""
+                INSERT INTO bookshelf (bookshelf_id, profile_id, shelf_name, description, is_public)
+                VALUES (:id, :pid, :name, :description, :is_public)
+            """),
+            {"id": new_id, "pid": pid, "name": name, "description": description, "is_public": is_public}
+        )
+        try:
+            g.conn.commit()
+        except Exception:
+            pass
+    except Exception as e:
+        print("create bookshelf db error:", e)
+        try:
+            g.conn.rollback()
+        except Exception:
+            pass
+
+    return redirect(url_for('profile', profile_id=pid))
+
 # deletes cookies and redirects to home
 @app.route('/logout', methods=['POST'])
 def logout():

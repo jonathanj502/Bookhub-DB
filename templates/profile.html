@@ -24,6 +24,35 @@
     <section style="margin-top:20px;">
       <h2 style="margin-bottom:8px;">Bookshelves</h2>
 
+      {% if is_owner %}
+      <details class="create-shelf" style="margin-bottom:12px;">
+        <summary style="cursor:pointer;padding:10px;border:1px solid #eee;border-radius:6px;background:#fff;font-weight:600;">
+          Create bookshelf
+        </summary>
+
+        <form method="post" action="{{ url_for('create_bookshelf') }}" style="margin-top:8px;padding:10px;border:1px solid #eee;border-radius:6px;background:#fafafa;">
+          <div style="display:flex;gap:8px;align-items:flex-start;">
+            <div style="flex:1;">
+              <label style="display:block;font-weight:600;margin-bottom:6px;">Shelf name
+                <input name="shelf_name" type="text" required placeholder="Shelf name" style="width:100%;padding:6px;margin-top:6px;box-sizing:border-box;">
+              </label>
+              <label style="display:block;margin-top:6px;">Description
+                <textarea name="description" rows="2" style="width:100%;padding:6px;margin-top:6px;box-sizing:border-box;"></textarea>
+              </label>
+            </div>
+
+            <div style="min-width:120px;display:flex;flex-direction:column;gap:8px;align-items:flex-end;">
+              <label style="font-size:0.9rem;">
+                <input type="checkbox" name="is_public" checked>
+                Public
+              </label>
+              <button type="submit" style="padding:8px 12px;">Create</button>
+            </div>
+          </div>
+        </form>
+      </details>
+      {% endif %}
+
       {% if bookshelves %}
         <ul style="list-style:none;padding:0;margin:0;display:grid;gap:12px;">
           {% for bs in bookshelves %}
@@ -41,6 +70,18 @@
                     {{ bs.created_at }}{% if not bs.is_public %} • private{% endif %}
                   </div>
                 </div>
+
+                {% if is_owner %}
+                <div style="margin-left:12px;flex:0 0 auto;">
+                  <form method="post" action="{{ url_for('delete_bookshelf', bookshelf_id=bs.id) }}"
+                        onsubmit="return confirm('Delete bookshelf &quot;{{ bs.name }}&quot;? This cannot be undone.');"
+                        style="display:inline;">
+                    <button type="submit" style="background:#fff;border:0px solid #e0e0e0;color:#b00020;padding:6px 8px;border-radius:4px;cursor:pointer;">
+                      🗑️
+                    </button>
+                  </form>
+                </div>
+                {% endif %}
               </div>
               {% if bs.description %}
                 <p style="margin:8px 0 0;color:#444;">{{ bs.description }}</p>
@@ -65,7 +106,7 @@
       </button>
     </form>
     {% endif %}
-    
+
   </main>
 </body>
 </html>
