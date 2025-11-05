@@ -497,6 +497,76 @@ def profile(profile_id):
     has_view_bookshelf = 'view_bookshelf' in app.view_functions
     return render_template('profile.html', profile=profile, bookshelves=bookshelves, is_owner=is_owner, has_view_bookshelf=has_view_bookshelf)
 
+@app.route('/bookshelf/<int:bookshelf_id>')
+def view_bookshelf(bookshelf_id):
+    try:
+        row = g.conn.execute(
+            text("""
+                SELECT bs.bookshelf_id, bs.profile_id, bs.shelf_name, bs.description,
+                       bs.is_public, bs.created_at, p.username AS owner_username
+                FROM bookshelf bs
+                LEFT JOIN profile p ON bs.profile_id = p.profile_id
+                WHERE bs.bookshelf_id = :bsid
+            """),
+            {"bsid": bookshelf_id}
+        ).fetchone()
+    except Exception as e:
+        print("bookshelf db error:", e)
+        abort(500)
+
+    if row is None:
+        abort(404)
+
+    m = getattr(row, "_mapping", row)
+    shelf = {
+        "id": m.get("bookshelf_id") if hasattr(m, "get") else row[0],
+        "profile_id": m.get("profile_id") if hasattr(m, "get") else row[1],
+        "name": m.get("shelf_name") if hasattr(m, "get") else row[2],
+        "description": m.get("description") if hasattr(m, "get") else row[3],
+        "is_public": bool(m.get("is_public")) if hasattr(m, "get") else bool(row[4]),
+        "created_at": m.get("created_at") if hasattr(m, "get") else row[5],
+        "owner_username": m.get("owner_username") if hasattr(m, "get") else row[6],
+    }
+
+    # viewer = cookie (same pattern used elsewhere)
+    viewer = request.cookies.get('profile_id')
+    try:
+        is_owner = (int(viewer) == shelf["profile_id"])
+    except Exception:
+        is_owner = False
+
+    # enforce visibility: if private and not owner -> 403
+    if not shelf["is_public"] and not is_owner:
+        abort(403)
+
+    # load books in the bookshelf (most recent added first)
+    try:
+        cur = g.conn.execute(
+            text("""
+                SELECT b.book_id AS id, b.title AS title, b.publication_year AS published_year, b.image_url
+                FROM contains_book cb
+                JOIN book b ON cb.book_id = b.book_id
+                WHERE cb.bookshelf_id = :bsid
+                ORDER BY cb.added_at DESC
+            """),
+            {"bsid": bookshelf_id}
+        )
+        books = []
+        for r in cur:
+            rm = getattr(r, "_mapping", r)
+            books.append({
+                "id": rm.get("id") if hasattr(rm, "get") else r[0],
+                "title": rm.get("title") if hasattr(rm, "get") else r[1],
+                "published_year": rm.get("published_year") if hasattr(rm, "get") else r[2],
+                "image_url": rm.get("image_url") if hasattr(rm, "get") else r[3],
+            })
+        cur.close()
+    except Exception as e:
+        print("books in bookshelf db error:", e)
+        books = []
+
+    return render_template("view_bookshelf.html", shelf=shelf, books=books, is_owner=is_owner)
+
 # deletes cookies and redirects to home
 @app.route('/logout', methods=['POST'])
 def logout():
