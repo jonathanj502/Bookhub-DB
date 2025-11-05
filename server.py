@@ -379,10 +379,37 @@ def delete_review(book_id):
 
     return redirect(url_for('book', book_id=book_id))
 
-@app.route('/author/<int:author_id>')
+@app.route('/author/<int:author_id>', methods=['GET', 'POST'])
 def author(author_id):
+    current_user_id = request.cookies.get('profile_id')
+    if current_user_id:
+        current_user_id = int(current_user_id)
+
+    # Handle add/remove favorite
+    if request.method == 'POST' and current_user_id:
+        action = request.form.get('action')
+        with g.conn.begin():
+            if action == 'favorite':
+                g.conn.execute(
+                    text("""
+                        INSERT INTO has_favorite (profile_id, author_id)
+                        VALUES (:pid, :aid)
+                        ON CONFLICT DO NOTHING
+                    """),
+                    {"pid": current_user_id, "aid": author_id}
+                )
+            elif action == 'unfavorite':
+                g.conn.execute(
+                    text("""
+                        DELETE FROM has_favorite
+                        WHERE profile_id = :pid AND author_id = :aid
+                    """),
+                    {"pid": current_user_id, "aid": author_id}
+                )
+        return redirect(url_for('author', author_id=author_id))
+
+    # Fetch author row
     try:
-        # fetch author row
         row = g.conn.execute(
             text("SELECT author_id, name, birthday, nationality FROM author WHERE author_id = :aid"),
             {"aid": author_id}
@@ -402,11 +429,14 @@ def author(author_id):
         "nationality": m.get("nationality") if hasattr(m, "get") else row[3],
     }
 
-    # fetch books by this author
+    # Fetch books by this author (with image_url and year for bookshelf-style cards)
     try:
         books_cursor = g.conn.execute(
             text("""
-                SELECT b.book_id AS id, b.title AS title, b.publication_year AS published_year
+                SELECT b.book_id AS id,
+                       b.title AS title,
+                       b.publication_year AS published_year,
+                       b.image_url AS image_url
                 FROM book b
                 JOIN written_by wb ON b.book_id = wb.book_id
                 WHERE wb.author_id = :aid
@@ -421,13 +451,28 @@ def author(author_id):
                 "id": bm.get("id") if hasattr(bm, "get") else brow[0],
                 "title": bm.get("title") if hasattr(bm, "get") else brow[1],
                 "published_year": bm.get("published_year") if hasattr(bm, "get") else brow[2],
+                "image_url": bm.get("image_url") if hasattr(bm, "get") else brow[3],
             })
         books_cursor.close()
     except Exception as e:
         print("author books db error:", e)
         books = []
 
-    return render_template("author_page.html", author=author, books=books)
+    # Check if current user has favorited this author
+    is_favorite = False
+    if current_user_id:
+        is_favorite = g.conn.execute(
+            text("SELECT 1 FROM has_favorite WHERE profile_id=:pid AND author_id=:aid"),
+            {"pid": current_user_id, "aid": author_id}
+        ).fetchone() is not None
+
+    return render_template(
+        "author_page.html",
+        author=author,
+        books=books,
+        current_user_id=current_user_id,
+        is_favorite=is_favorite
+    )
 
 @app.route('/profile/<int:profile_id>', methods=['GET', 'POST'])
 def profile(profile_id):
@@ -436,18 +481,25 @@ def profile(profile_id):
         current_user_id = int(current_user_id)
     print(f"[DEBUG] Visiting profile {profile_id}, current_user_id={current_user_id}, method={request.method}")
 
-    # Handle follow/unfollow POST (same as before)...
+    # Handle follow/unfollow
     if request.method == 'POST' and current_user_id:
         action = request.form.get('action')
         with g.conn.begin():
             if action == 'follow':
                 g.conn.execute(
-                    text("INSERT INTO follows (follower_id, following_id) VALUES (:f, :t) ON CONFLICT DO NOTHING"),
+                    text("""
+                        INSERT INTO follows (follower_id, following_id)
+                        VALUES (:f, :t)
+                        ON CONFLICT DO NOTHING
+                    """),
                     {"f": current_user_id, "t": profile_id}
                 )
             elif action == 'unfollow':
                 g.conn.execute(
-                    text("DELETE FROM follows WHERE follower_id=:f AND following_id=:t"),
+                    text("""
+                        DELETE FROM follows
+                        WHERE follower_id = :f AND following_id = :t
+                    """),
                     {"f": current_user_id, "t": profile_id}
                 )
         return redirect(url_for('profile', profile_id=profile_id))
@@ -459,6 +511,7 @@ def profile(profile_id):
     ).fetchone()
     if row is None:
         abort(404)
+
     m = getattr(row, "_mapping", row)
     profile = {
         "profile_id": m.get("profile_id") if hasattr(m, "get") else row[0],
@@ -466,7 +519,7 @@ def profile(profile_id):
         "joined_at": m.get("joined_at") if hasattr(m, "get") else row[2],
     }
 
-    # Followers/following counts
+    # Counts
     followers_count = g.conn.execute(
         text("SELECT COUNT(*) FROM follows WHERE following_id = :pid"),
         {"pid": profile_id}
@@ -476,10 +529,11 @@ def profile(profile_id):
         {"pid": profile_id}
     ).scalar()
 
+    # Follow status
     is_following = False
     if current_user_id:
         is_following = g.conn.execute(
-            text("SELECT 1 FROM follows WHERE follower_id=:f AND following_id=:t"),
+            text("SELECT 1 FROM follows WHERE follower_id = :f AND following_id = :t"),
             {"f": current_user_id, "t": profile_id}
         ).fetchone() is not None
 
@@ -494,6 +548,7 @@ def profile(profile_id):
         {"pid": profile_id}
     ).fetchall()
 
+    # Following list
     following = g.conn.execute(
         text("""
             SELECT p.profile_id AS id, p.username
@@ -511,16 +566,6 @@ def profile(profile_id):
             FROM has_favorite hf
             JOIN author a ON hf.author_id = a.author_id
             WHERE hf.profile_id = :pid
-        """),
-        {"pid": profile_id}
-    ).fetchall()
-
-    # Bookshelves
-    bookshelves = g.conn.execute(
-        text("""
-            SELECT bookshelf_id AS id, shelf_name
-            FROM bookshelf
-            WHERE profile_id = :pid
         """),
         {"pid": profile_id}
     ).fetchall()
@@ -546,21 +591,6 @@ def profile(profile_id):
         """),
         {"pid": profile_id}
     ).fetchall()
-
-    return render_template(
-        'profile.html',
-        profile=profile,
-        followers_count=followers_count,
-        following_count=following_count,
-        is_following=is_following,
-        current_user_id=current_user_id,
-        followers=followers,
-        following=following,
-        favorite_authors=favorite_authors,
-        bookshelves=bookshelves,
-        tracked_books=tracked_books,
-        reviews=reviews
-    )
 
     # show private bookshelves only to the profile owner (based on cookie)
     viewer = request.cookies.get('profile_id')
@@ -607,7 +637,23 @@ def profile(profile_id):
         bookshelves = []
 
     has_view_bookshelf = 'view_bookshelf' in app.view_functions
-    return render_template('profile.html', profile=profile, bookshelves=bookshelves, is_owner=is_owner, has_view_bookshelf=has_view_bookshelf)
+
+    return render_template(
+        'profile.html',
+        profile=profile,
+        followers_count=followers_count,
+        following_count=following_count,
+        is_following=is_following,
+        current_user_id=current_user_id,
+        followers=followers,
+        following=following,
+        favorite_authors=favorite_authors,
+        bookshelves=bookshelves,
+        is_owner=is_owner,
+        has_view_bookshelf=has_view_bookshelf,
+        tracked_books=tracked_books,
+        reviews=reviews
+    )
 
 @app.route('/bookshelf/<int:bookshelf_id>')
 def view_bookshelf(bookshelf_id):
