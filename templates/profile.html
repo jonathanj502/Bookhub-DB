@@ -6,19 +6,126 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-  <header style="max-width:1000px;margin:12px auto;padding:0 16px;">
+  <header class="topbar" style="max-width:1000px;margin:12px auto;padding:0 16px;">
     <a href="{{ url_for('index') }}">&larr; Home</a>
+    <div class="brand">Book Search</div>
+    <div class="top-actions">
+      {# if a profile_id cookie is present show avatar linking to profile, otherwise show login link #}
+      {% if request.cookies.get('profile_id') %}
+        <a class="profile-link" href="{{ url_for('profile', profile_id=request.cookies.get('profile_id')) }}">
+          <img class="avatar" src="{{ url_for('static', filename='img/default-avatar.png') }}"
+               alt="{{ request.cookies.get('username') or 'Profile' }}" loading="lazy">
+        </a>
+      {% else %}
+        <a class="signin" href="{{ url_for('login') }}">Log in</a>
+      {% endif %}
+    </div>
   </header>
 
   <main style="max-width:720px;margin:24px auto;padding:16px;">
-    <div style="display:flex;align-items:center;gap:16px;">
-      <img src="{{ url_for('static', filename='img/default-avatar.png') }}" alt="{{ profile.username }}"
-           style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:1px solid #ddd;">
-      <div>
-        <h1 style="margin:0">{{ profile.username }}</h1>
-        <p style="margin:6px 0 0;color:#666">Joined: {{ profile.joined_at }}</p>
-      </div>
-    </div>
+
+    {% if current_user_id and current_user_id != profile.profile_id %}
+      <form method="post" style="margin-top:16px;">
+        {% if is_following %}
+          <button type="submit" name="action" value="unfollow"
+                  style="padding:8px 12px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer;">
+            Unfollow
+          </button>
+        {% else %}
+          <button type="submit" name="action" value="follow"
+                  style="padding:8px 12px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer;">
+            Follow
+          </button>
+        {% endif %}
+      </form>
+    {% elif current_user_id == profile.profile_id %}
+      <!-- logout form -->
+      <form method="post" action="{{ url_for('logout') }}" style="margin-top:16px;">
+        <button type="submit" style="padding:8px 12px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer;">
+          Log out
+        </button>
+      </form>
+    {% endif %}
+
+    <!-- Followers -->
+    <details style="margin-top:1em;">
+      <summary style="cursor:pointer;font-weight:bold;">
+        Followers ({{ followers_count }})
+      </summary>
+      <ul>
+        {% for f in followers %}
+          <li><a href="{{ url_for('profile', profile_id=f.id) }}">{{ f.username }}</a></li>
+        {% endfor %}
+      </ul>
+    </details>
+
+    <!-- Following -->
+    <details style="margin-top:1em;">
+      <summary style="cursor:pointer;font-weight:bold;">
+        Following ({{ following_count }})
+      </summary>
+      <ul>
+        {% for f in following %}
+          <li><a href="{{ url_for('profile', profile_id=f.id) }}">{{ f.username }}</a></li>
+        {% endfor %}
+      </ul>
+    </details>
+
+    <!-- Favorite Authors -->
+    <details style="margin-top:1em;">
+      <summary style="cursor:pointer;font-weight:bold;">
+        Favorite Authors ({{ favorite_authors|length }})
+      </summary>
+      <ul>
+        {% for a in favorite_authors %}
+          <li><a href="{{ url_for('author', author_id=a.id) }}">{{ a.name }}</a></li>
+        {% endfor %}
+      </ul>
+    </details>
+
+    <!-- Bookshelves -->
+    <details style="margin-top:1em;">
+      <summary style="cursor:pointer;font-weight:bold;">
+        Bookshelves ({{ bookshelves|length }})
+      </summary>
+      <ul>
+        {% for s in bookshelves %}
+          <li><a href="/bookshelf/{{ s.id }}">{{ s.shelf_name }}</a></li>
+        {% endfor %}
+      </ul>
+    </details>
+
+    <!-- Tracked Books -->
+    <details style="margin-top:1em;">
+      <summary style="cursor:pointer;font-weight:bold;">
+        Tracked Books ({{ tracked_books|length }})
+      </summary>
+      <ul>
+        {% for b in tracked_books %}
+          <li>
+            <a href="{{ url_for('book', book_id=b.id) }}">{{ b.title }}</a>
+            ({{ b.status }})
+          </li>
+        {% endfor %}
+      </ul>
+    </details>
+
+    <!-- Book Reviews -->
+    <details style="margin-top:1em;">
+      <summary style="cursor:pointer;font-weight:bold;">
+        Reviews ({{ reviews|length }})
+      </summary>
+      <ul>
+        {% for r in reviews %}
+          <li>
+            <a href="{{ url_for('book', book_id=r.id) }}#review-{{ profile.profile_id }}">
+              {{ r.title }}
+            </a>
+            {% if r.rating %} — Rated {{ r.rating }}{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </details>
 
     <!-- logout form -->
     <form method="post" action="{{ url_for('logout') }}" style="margin-top:16px;">
@@ -26,8 +133,6 @@
         Log out
       </button>
     </form>
-
-    <!-- add more profile details here -->
   </main>
 </body>
 </html>

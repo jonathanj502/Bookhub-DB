@@ -309,27 +309,138 @@ def author(author_id):
 
     return render_template("author_page.html", author=author, books=books)
 
-@app.route('/profile/<int:profile_id>')
+@app.route('/profile/<int:profile_id>', methods=['GET', 'POST'])
 def profile(profile_id):
-    try:
-        row = g.conn.execute(
-            text("SELECT profile_id, username, joined_at FROM profile WHERE profile_id = :pid"),
-            {"pid": profile_id}
-        ).fetchone()
-    except Exception as e:
-        print("profile db error:", e)
-        abort(500)
+    current_user_id = request.cookies.get('profile_id')
+    if current_user_id:
+        current_user_id = int(current_user_id)
+    print(f"[DEBUG] Visiting profile {profile_id}, current_user_id={current_user_id}, method={request.method}")
 
+    # Handle follow/unfollow POST (same as before)...
+    if request.method == 'POST' and current_user_id:
+        action = request.form.get('action')
+        with g.conn.begin():
+            if action == 'follow':
+                g.conn.execute(
+                    text("INSERT INTO follows (follower_id, following_id) VALUES (:f, :t) ON CONFLICT DO NOTHING"),
+                    {"f": current_user_id, "t": profile_id}
+                )
+            elif action == 'unfollow':
+                g.conn.execute(
+                    text("DELETE FROM follows WHERE follower_id=:f AND following_id=:t"),
+                    {"f": current_user_id, "t": profile_id}
+                )
+        return redirect(url_for('profile', profile_id=profile_id))
+
+    # Fetch profile
+    row = g.conn.execute(
+        text("SELECT profile_id, username, joined_at FROM profile WHERE profile_id = :pid"),
+        {"pid": profile_id}
+    ).fetchone()
     if row is None:
         abort(404)
-
     m = getattr(row, "_mapping", row)
     profile = {
         "profile_id": m.get("profile_id") if hasattr(m, "get") else row[0],
         "username": m.get("username") if hasattr(m, "get") else row[1],
         "joined_at": m.get("joined_at") if hasattr(m, "get") else row[2],
     }
-    return render_template('profile.html', profile=profile)
+
+    # Followers/following counts
+    followers_count = g.conn.execute(
+        text("SELECT COUNT(*) FROM follows WHERE following_id = :pid"),
+        {"pid": profile_id}
+    ).scalar()
+    following_count = g.conn.execute(
+        text("SELECT COUNT(*) FROM follows WHERE follower_id = :pid"),
+        {"pid": profile_id}
+    ).scalar()
+
+    is_following = False
+    if current_user_id:
+        is_following = g.conn.execute(
+            text("SELECT 1 FROM follows WHERE follower_id=:f AND following_id=:t"),
+            {"f": current_user_id, "t": profile_id}
+        ).fetchone() is not None
+
+    # Followers list
+    followers = g.conn.execute(
+        text("""
+            SELECT p.profile_id AS id, p.username
+            FROM follows f
+            JOIN profile p ON f.follower_id = p.profile_id
+            WHERE f.following_id = :pid
+        """),
+        {"pid": profile_id}
+    ).fetchall()
+
+    following = g.conn.execute(
+        text("""
+            SELECT p.profile_id AS id, p.username
+            FROM follows f
+            JOIN profile p ON f.following_id = p.profile_id
+            WHERE f.follower_id = :pid
+        """),
+        {"pid": profile_id}
+    ).fetchall()
+
+    # Favorite authors
+    favorite_authors = g.conn.execute(
+        text("""
+            SELECT a.author_id AS id, a.name
+            FROM has_favorite hf
+            JOIN author a ON hf.author_id = a.author_id
+            WHERE hf.profile_id = :pid
+        """),
+        {"pid": profile_id}
+    ).fetchall()
+
+    # Bookshelves
+    bookshelves = g.conn.execute(
+        text("""
+            SELECT bookshelf_id AS id, shelf_name
+            FROM bookshelf
+            WHERE profile_id = :pid
+        """),
+        {"pid": profile_id}
+    ).fetchall()
+
+    # Tracked books
+    tracked_books = g.conn.execute(
+        text("""
+            SELECT b.book_id AS id, b.title, it.status
+            FROM is_tracking it
+            JOIN book b ON it.book_id = b.book_id
+            WHERE it.profile_id = :pid
+        """),
+        {"pid": profile_id}
+    ).fetchall()
+
+    # Reviews
+    reviews = g.conn.execute(
+        text("""
+            SELECT r.book_id AS id, b.title, r.rating, r.review_text
+            FROM reviews r
+            JOIN book b ON r.book_id = b.book_id
+            WHERE r.profile_id = :pid
+        """),
+        {"pid": profile_id}
+    ).fetchall()
+
+    return render_template(
+        'profile.html',
+        profile=profile,
+        followers_count=followers_count,
+        following_count=following_count,
+        is_following=is_following,
+        current_user_id=current_user_id,
+        followers=followers,
+        following=following,
+        favorite_authors=favorite_authors,
+        bookshelves=bookshelves,
+        tracked_books=tracked_books,
+        reviews=reviews
+    )
 
 # deletes cookies and redirects to home
 @app.route('/logout', methods=['POST'])
