@@ -261,7 +261,53 @@ def book(book_id):
 
 @app.route('/author/<int:author_id>')
 def author(author_id):
-    return render_template("author_page.html")
+    try:
+        # fetch author row
+        row = g.conn.execute(
+            text("SELECT author_id, name, birthday, nationality FROM author WHERE author_id = :aid"),
+            {"aid": author_id}
+        ).fetchone()
+    except Exception as e:
+        print("author db error:", e)
+        abort(500)
+
+    if row is None:
+        abort(404)
+
+    m = getattr(row, "_mapping", row)
+    author = {
+        "author_id": m.get("author_id") if hasattr(m, "get") else row[0],
+        "name": m.get("name") if hasattr(m, "get") else row[1],
+        "birthday": m.get("birthday") if hasattr(m, "get") else row[2],
+        "nationality": m.get("nationality") if hasattr(m, "get") else row[3],
+    }
+
+    # fetch books by this author
+    try:
+        books_cursor = g.conn.execute(
+            text("""
+                SELECT b.book_id AS id, b.title AS title, b.publication_year AS published_year
+                FROM book b
+                JOIN written_by wb ON b.book_id = wb.book_id
+                WHERE wb.author_id = :aid
+                ORDER BY b.publication_year DESC NULLS LAST
+            """),
+            {"aid": author_id}
+        )
+        books = []
+        for brow in books_cursor:
+            bm = getattr(brow, "_mapping", brow)
+            books.append({
+                "id": bm.get("id") if hasattr(bm, "get") else brow[0],
+                "title": bm.get("title") if hasattr(bm, "get") else brow[1],
+                "published_year": bm.get("published_year") if hasattr(bm, "get") else brow[2],
+            })
+        books_cursor.close()
+    except Exception as e:
+        print("author books db error:", e)
+        books = []
+
+    return render_template("author_page.html", author=author, books=books)
 
 @app.route('/profile/<int:profile_id>')
 def profile(profile_id):

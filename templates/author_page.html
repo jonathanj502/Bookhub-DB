@@ -1,12 +1,62 @@
-</html>
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Search</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}"">
+  <title>{{ author.name if author and author.name else 'Author' }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
 </head>
 <body>
-    <h1>Author Information</h1>
+  <header style="max-width:900px;margin:18px auto;padding:0 16px;display:flex;align-items:center;">
+    <a href="{{ url_for('index') }}" style="margin-right:auto;">&larr; Home</a>
+    <!-- show login/profile based on cookie -->
+    {% if request.cookies.get('profile_id') %}
+      <a href="{{ url_for('profile', profile_id=request.cookies.get('profile_id')) }}" style="margin-left:auto;">
+        <img src="{{ url_for('static', filename='img/default-avatar.png') }}" alt="Profile" style="width:36px;height:36px;border-radius:50%;object-fit:cover;">
+      </a>
+    {% else %}
+      <a href="{{ url_for('login') }}" style="margin-left:auto;">Log in</a>
+    {% endif %}
+  </header>
+
+  <main style="max-width:900px;margin:18px auto;padding:16px;">
+    <section style="display:flex;gap:20px;align-items:flex-start;">
+      <div style="flex:0 0 120px;">
+        <img src="{{ url_for('static', filename='img/author-placeholder.png') }}" alt="Author" style="width:120px;height:120px;border-radius:8px;object-fit:cover;border:1px solid #ddd;">
+      </div>
+
+      <div style="flex:1;">
+        <h1 style="margin:0 0 8px 0;">{{ author.name if author and author.name else 'Unknown author' }}</h1>
+
+        <p style="margin:6px 0;color:#555;">
+          <strong>Born:</strong>
+          {% if author and author.birthday %}
+            {{ author.birthday }}
+          {% else %}
+            Unknown
+          {% endif %}
+          &nbsp;•&nbsp;
+          <strong>Nationality:</strong>
+          {{ author.nationality if author and author.nationality else 'Unknown' }}
+        </p>
+
+        <hr style="margin:14px 0;">
+
+        <h2 style="margin:8px 0;">Books by {{ author.name if author and author.name else 'this author' }}</h2>
+        {% if books %}
+          <ul style="padding-left:18px;margin-top:8px;">
+            {% for b in books %}
+              <li style="margin:6px 0;">
+                <a href="{{ url_for('book', book_id=b.id) }}">{{ b.title }}</a>
+                {% if b.published_year %}<span style="color:#666;margin-left:8px;">({{ b.published_year }})</span>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p style="color:#666;margin-top:8px;">No books recorded for this author.</p>
+        {% endif %}
+      </div>
+    </section>
+  </main>
 </body>
 </html>
