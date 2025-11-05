@@ -408,7 +408,7 @@ def author(author_id):
                 )
         return redirect(url_for('author', author_id=author_id))
 
-    # fetch author row
+    # Fetch author row
     try:
         row = g.conn.execute(
             text("SELECT author_id, name, birthday, nationality FROM author WHERE author_id = :aid"),
@@ -429,11 +429,14 @@ def author(author_id):
         "nationality": m.get("nationality") if hasattr(m, "get") else row[3],
     }
 
-    # fetch books by this author
+    # Fetch books by this author (with image_url and year for bookshelf-style cards)
     try:
         books_cursor = g.conn.execute(
             text("""
-                SELECT b.book_id AS id, b.title AS title, b.publication_year AS published_year
+                SELECT b.book_id AS id,
+                       b.title AS title,
+                       b.publication_year AS published_year,
+                       b.image_url AS image_url
                 FROM book b
                 JOIN written_by wb ON b.book_id = wb.book_id
                 WHERE wb.author_id = :aid
@@ -448,13 +451,14 @@ def author(author_id):
                 "id": bm.get("id") if hasattr(bm, "get") else brow[0],
                 "title": bm.get("title") if hasattr(bm, "get") else brow[1],
                 "published_year": bm.get("published_year") if hasattr(bm, "get") else brow[2],
+                "image_url": bm.get("image_url") if hasattr(bm, "get") else brow[3],
             })
         books_cursor.close()
     except Exception as e:
         print("author books db error:", e)
         books = []
 
-    # check if current user has favorited this author
+    # Check if current user has favorited this author
     is_favorite = False
     if current_user_id:
         is_favorite = g.conn.execute(

@@ -67,13 +67,26 @@
         </h2>
 
         {% if books %}
-          <ul style="padding-left:18px;margin-top:8px;">
+          <ul style="list-style:none;padding:0;margin:0;display:grid;gap:12px;">
             {% for b in books %}
-              <li style="margin:6px 0;">
-                <a href="{{ url_for('book', book_id=b.id) }}">{{ b.title }}</a>
-                {% if b.published_year %}
-                  <span style="color:#666;margin-left:8px;">({{ b.published_year }})</span>
-                {% endif %}
+              <li style="display:flex;gap:12px;align-items:center;padding:10px;border:1px solid #eee;border-radius:6px;">
+                <div style="width:72px;flex:0 0 72px;">
+                  {% if b.image_url %}
+                    <img src="{{ b.image_url }}" alt="{{ b.title }}"
+                        style="width:72px;height:72px;object-fit:cover;border-radius:4px;">
+                  {% else %}
+                    <div style="width:72px;height:72px;background:#f4f4f4;display:flex;align-items:center;justify-content:center;border-radius:4px;color:#999;">
+                      No image
+                    </div>
+                  {% endif %}
+                </div>
+
+                <div style="flex:1;">
+                  <a href="{{ url_for('book', book_id=b.id) }}" style="font-weight:600;">{{ b.title }}</a>
+                  <div style="color:#666;font-size:0.9rem;margin-top:4px;">
+                    {{ b.published_year or 'N/A' }}
+                  </div>
+                </div>
               </li>
             {% endfor %}
           </ul>
