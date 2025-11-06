@@ -1,8 +1,8 @@
 jj3489, ssw2163
 
-**PostgreSQL account:**
+**PostgreSQL account:** ssw2163
 
-**Web Application URL:**
+**Web Application URL:** [http://35.196.229.98:8111](http://35.196.229.98:8111/)
 
 **Original Proposal Comparison**
 
