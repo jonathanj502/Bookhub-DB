@@ -1056,6 +1056,266 @@ def remove_book_from_shelf(bookshelf_id, book_id):
 
     return redirect(url_for('view_bookshelf', bookshelf_id=bookshelf_id))
 
+@app.route('/challenges')
+def challenges():
+    """List active (or all) challenges with join status for current user."""
+    current_user_id = request.cookies.get('profile_id')
+    if current_user_id:
+        current_user_id = int(current_user_id)
+
+    try:
+        cur = g.conn.execute(text("""
+            SELECT c.challenge_id, c.name, c.description, c.starts_at, c.ends_at,
+                   c.goal_type, c.goal_value, c.genre_id, g.genre_name
+            FROM challenge c
+            LEFT JOIN genre g ON c.genre_id = g.genre_id
+            ORDER BY c.starts_at DESC
+        """))
+        challenges = []
+        for r in cur:
+            rm = getattr(r, "_mapping", r)
+            challenges.append({
+                "id": rm.get("challenge_id") if hasattr(rm, "get") else r[0],
+                "name": rm.get("name") if hasattr(rm, "get") else r[1],
+                "description": rm.get("description") if hasattr(rm, "get") else r[2],
+                "starts_at": rm.get("starts_at") if hasattr(rm, "get") else r[3],
+                "ends_at": rm.get("ends_at") if hasattr(rm, "get") else r[4],
+                "goal_type": rm.get("goal_type") if hasattr(rm, "get") else r[5],
+                "goal_value": rm.get("goal_value") if hasattr(rm, "get") else r[6],
+                "genre_id": rm.get("genre_id") if hasattr(rm, "get") else r[7],
+                "genre_name": rm.get("genre_name") if hasattr(rm, "get") else r[8],
+            })
+        cur.close()
+    except Exception as e:
+        print("challenges list db error:", e)
+        challenges = []
+
+    # load participation for current user (if any)
+    user_participation = {}
+    if current_user_id:
+        try:
+            cur = g.conn.execute(text("""
+                SELECT challenge_id, current_progress, status
+                FROM participates_in
+                WHERE profile_id = :pid
+            """), {"pid": current_user_id})
+            for r in cur:
+                rm = getattr(r, "_mapping", r)
+                user_participation[rm.get("challenge_id")] = {
+                    "current_progress": rm.get("current_progress"),
+                    "status": rm.get("status")
+                }
+            cur.close()
+        except Exception as e:
+            print("participation lookup error:", e)
+
+    return render_template("challenges.html", challenges=challenges, user_participation=user_participation, current_user_id=current_user_id)
+
+@app.route('/challenge/<int:challenge_id>')
+def view_challenge(challenge_id):
+    current_user_id = request.cookies.get('profile_id')
+    if current_user_id:
+        current_user_id = int(current_user_id)
+
+    try:
+        row = g.conn.execute(text("""
+            SELECT c.challenge_id, c.name, c.description, c.starts_at, c.ends_at,
+                   c.goal_type, c.goal_value, c.genre_id, g.genre_name
+            FROM challenge c
+            LEFT JOIN genre g ON c.genre_id = g.genre_id
+            WHERE c.challenge_id = :cid
+        """), {"cid": challenge_id}).fetchone()
+    except Exception as e:
+        print("challenge lookup error:", e)
+        abort(500)
+
+    if row is None:
+        abort(404)
+
+    rm = getattr(row, "_mapping", row)
+    challenge = {
+        "id": rm.get("challenge_id") if hasattr(rm, "get") else row[0],
+        "name": rm.get("name") if hasattr(rm, "get") else row[1],
+        "description": rm.get("description") if hasattr(rm, "get") else row[2],
+        "starts_at": rm.get("starts_at") if hasattr(rm, "get") else row[3],
+        "ends_at": rm.get("ends_at") if hasattr(rm, "get") else row[4],
+        "goal_type": rm.get("goal_type") if hasattr(rm, "get") else row[5],
+        "goal_value": rm.get("goal_value") if hasattr(rm, "get") else row[6],
+        "genre_id": rm.get("genre_id") if hasattr(rm, "get") else row[7],
+        "genre_name": rm.get("genre_name") if hasattr(rm, "get") else row[8],
+    }
+
+    participation = None
+    if current_user_id:
+        try:
+            p = g.conn.execute(text("""
+                SELECT profile_id, current_progress, joined_at, status
+                FROM participates_in
+                WHERE profile_id = :pid AND challenge_id = :cid
+            """), {"pid": current_user_id, "cid": challenge_id}).fetchone()
+            if p:
+                pm = getattr(p, "_mapping", p)
+                participation = {
+                    "profile_id": pm.get("profile_id") if hasattr(pm, "get") else p[0],
+                    "current_progress": pm.get("current_progress") if hasattr(pm, "get") else p[1],
+                    "joined_at": pm.get("joined_at") if hasattr(pm, "get") else p[2],
+                    "status": pm.get("status") if hasattr(pm, "get") else p[3],
+                }
+        except Exception as e:
+            print("participation detail error:", e)
+
+    # show participant list (count + few names)
+    participants = []
+    try:
+        cur = g.conn.execute(text("""
+            SELECT p.profile_id AS id, pr.username, p.current_progress, p.status
+            FROM participates_in p
+            JOIN profile pr ON p.profile_id = pr.profile_id
+            WHERE p.challenge_id = :cid
+            ORDER BY p.joined_at DESC
+            LIMIT 50
+        """), {"cid": challenge_id})
+        for r in cur:
+            rm = getattr(r, "_mapping", r)
+            participants.append({
+                "id": rm.get("id"),
+                "username": rm.get("username"),
+                "current_progress": rm.get("current_progress"),
+                "status": rm.get("status")
+            })
+        cur.close()
+    except Exception as e:
+        print("participants list error:", e)
+
+    return render_template("view_challenge.html", challenge=challenge, participation=participation, participants=participants, current_user_id=current_user_id)
+
+@app.route('/challenge/<int:challenge_id>/join', methods=['POST'])
+def join_challenge(challenge_id):
+    pid = request.cookies.get('profile_id')
+    if not pid:
+        return redirect(url_for('login'))
+    try:
+        pid = int(pid)
+    except Exception:
+        return redirect(url_for('login'))
+
+    try:
+        g.conn.execute(text("""
+            INSERT INTO participates_in (profile_id, challenge_id, current_progress, status)
+            VALUES (:pid, :cid, 0, 'active')
+            ON CONFLICT (profile_id, challenge_id) DO UPDATE SET status = 'active'
+        """), {"pid": pid, "cid": challenge_id})
+        try:
+            g.conn.commit()
+        except Exception:
+            pass
+    except Exception as e:
+        print("join challenge db error:", e)
+        try:
+            g.conn.rollback()
+        except Exception:
+            pass
+
+    return redirect(url_for('view_challenge', challenge_id=challenge_id))
+
+@app.route('/challenge/<int:challenge_id>/leave', methods=['POST'])
+def leave_challenge(challenge_id):
+    pid = request.cookies.get('profile_id')
+    if not pid:
+        return redirect(url_for('login'))
+    try:
+        pid = int(pid)
+    except Exception:
+        return redirect(url_for('login'))
+
+    # mark as dropped (retain history)
+    try:
+        g.conn.execute(text("""
+            UPDATE participates_in SET status = 'dropped' WHERE profile_id = :pid AND challenge_id = :cid
+        """), {"pid": pid, "cid": challenge_id})
+        try:
+            g.conn.commit()
+        except Exception:
+            pass
+    except Exception as e:
+        print("leave challenge db error:", e)
+        try:
+            g.conn.rollback()
+        except Exception:
+            pass
+
+    return redirect(url_for('view_challenge', challenge_id=challenge_id))
+
+@app.route('/challenge/<int:challenge_id>/progress', methods=['POST'])
+def update_challenge_progress(challenge_id):
+    pid = request.cookies.get('profile_id')
+    if not pid:
+        return redirect(url_for('login'))
+    try:
+        pid = int(pid)
+    except Exception:
+        return redirect(url_for('login'))
+
+    # accept delta or absolute value
+    delta_raw = request.form.get('delta', '').strip()
+    absolute_raw = request.form.get('current_progress', '').strip()
+    delta = None
+    absolute = None
+    try:
+        if delta_raw != '':
+            delta = int(delta_raw)
+    except Exception:
+        delta = None
+    try:
+        if absolute_raw != '':
+            absolute = int(absolute_raw)
+    except Exception:
+        absolute = None
+
+    try:
+        # fetch current progress and goal info
+        row = g.conn.execute(text("""
+            SELECT p.current_progress, c.goal_type, c.goal_value
+            FROM participates_in p
+            JOIN challenge c ON p.challenge_id = c.challenge_id
+            WHERE p.profile_id = :pid AND p.challenge_id = :cid
+        """), {"pid": pid, "cid": challenge_id}).fetchone()
+        if row is None:
+            return redirect(url_for('view_challenge', challenge_id=challenge_id))
+
+        cm = getattr(row, "_mapping", row)
+        current_progress = cm.get("current_progress") if hasattr(cm, "get") else row[0]
+        goal_type = cm.get("goal_type") if hasattr(cm, "get") else row[1]
+        goal_value = cm.get("goal_value") if hasattr(cm, "get") else row[2]
+
+        new_progress = current_progress or 0
+        if absolute is not None:
+            new_progress = absolute
+        elif delta is not None:
+            new_progress = new_progress + delta
+
+        new_status = 'active'
+        if new_progress >= (goal_value or 0):
+            new_status = 'completed'
+
+        g.conn.execute(text("""
+            UPDATE participates_in
+            SET current_progress = :np, status = :ns
+            WHERE profile_id = :pid AND challenge_id = :cid
+        """), {"np": new_progress, "ns": new_status, "pid": pid, "cid": challenge_id})
+        try:
+            g.conn.commit()
+        except Exception:
+            pass
+    except Exception as e:
+        print("update progress db error:", e)
+        try:
+            g.conn.rollback()
+        except Exception:
+            pass
+
+    return redirect(url_for('view_challenge', challenge_id=challenge_id))
+
 @app.route('/logout', methods=['POST'])
 def logout():
     # deletes cookies and redirects to home

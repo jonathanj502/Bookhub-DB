@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{ challenge.name }} — Challenge</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="topbar"><a href="{{ url_for('challenges') }}">&larr; Challenges</a></header>
+
+  <main style="max-width:900px;margin:18px auto;padding:16px;">
+    <h1>{{ challenge.name }}</h1>
+    <p style="color:#666;">
+      {{ challenge.starts_at }} — {{ challenge.ends_at }} • {{ challenge.goal_value }} {{ challenge.goal_type }}
+      {% if challenge.genre_name %} • {{ challenge.genre_name }}{% endif %}
+    </p>
+    {% if challenge.description %}
+      <p style="margin-top:12px;">{{ challenge.description }}</p>
+    {% endif %}
+
+    {% if current_user_id %}
+      {% if participation %}
+        <div style="margin-top:12px;">
+          <strong>Progress:</strong> {{ participation.current_progress }} • status: {{ participation.status }}
+        </div>
+
+        <form method="post" action="{{ url_for('update_challenge_progress', challenge_id=challenge.id) }}" style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+          <label>Delta <input name="delta" type="number" step="1" placeholder="+1/-1" style="width:80px;padding:6px;"></label>
+          <label>Set <input name="current_progress" type="number" min="0" placeholder="Set absolute" style="width:120px;padding:6px;"></label>
+          <button type="submit" style="padding:6px 10px;">Update</button>
+        </form>
+
+        <form method="post" action="{{ url_for('leave_challenge', challenge_id=challenge.id) }}" style="margin-top:8px;">
+          <button type="submit" style="background:#fff;border:1px solid #e0e0e0;color:#b00020;padding:6px 8px;border-radius:4px;">Leave challenge</button>
+        </form>
+
+      {% else %}
+        <form method="post" action="{{ url_for('join_challenge', challenge_id=challenge.id) }}" style="margin-top:12px;">
+          <button type="submit" style="padding:8px 12px;">Join challenge</button>
+        </form>
+      {% endif %}
+    {% else %}
+      <p style="margin-top:12px;"><a href="{{ url_for('login') }}">Log in</a> to join this challenge.</p>
+    {% endif %}
+
+    <section style="margin-top:18px;">
+      <h2>Participants ({{ participants|length }})</h2>
+      <ul>
+        {% for p in participants %}
+          <li><a href="{{ url_for('profile', profile_id=p.id) }}">{{ p.username }}</a> — {{ p.current_progress or 0 }} ({{ p.status }})</li>
+        {% endfor %}
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Challenges</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="topbar"><a href="{{ url_for('index') }}">&larr; Home</a> <div class="brand">Challenges</div></header>
+
+  <main style="max-width:900px;margin:18px auto;padding:16px;">
+    <h1>Challenges</h1>
+
+    {% if challenges %}
+      <ul style="list-style:none;padding:0;margin:0;display:grid;gap:12px;">
+        {% for c in challenges %}
+          <li style="padding:12px;border:1px solid #eee;border-radius:6px;">
+            <a href="{{ url_for('view_challenge', challenge_id=c.id) }}" style="font-weight:600;">{{ c.name }}</a>
+            <div style="color:#666;font-size:0.9rem;">
+              {{ c.starts_at }} — {{ c.ends_at }} • {{ c.goal_value }} {{ c.goal_type }}
+              {% if c.genre_name %} • {{ c.genre_name }}{% endif %}
+            </div>
+            {% if current_user_id and user_participation.get(c.id) %}
+              <div style="margin-top:6px;color:#333;">
+                Your progress: {{ user_participation.get(c.id).current_progress }} • status: {{ user_participation.get(c.id).status }}
+              </div>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No challenges yet.</p>
+    {% endif %}
+  </main>
+</body>
+</html>

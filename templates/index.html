@@ -9,6 +9,9 @@
 <body>
   <header class="topbar">
     <div class="brand">Book Search</div>
+    <nav style="margin-left:8px;">
+      <a href="{{ url_for('challenges') }}">Challenges</a>
+    </nav>
     <div class="top-actions">
       {# if a profile_id cookie is present show avatar linking to profile, otherwise show login link #}
       {% if request.cookies.get('profile_id') %}
